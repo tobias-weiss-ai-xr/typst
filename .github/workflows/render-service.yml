@@ -1,0 +1,196 @@
+name: Render Service Image
+
+# Publishes the openEduSuite render service to ghcr.io on releases.
+# Image: ghcr.io/${GITHUB_REPOSITORY}-render (linux/amd64 + linux/arm64).
+# The pristine typst CLI base image is published by the upstream
+# docker-image.yml workflow on the same release.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Download typst CLI for integration tests
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
+          curl -fsSL "https://github.com/typst/typst/releases/download/v${version}/typst-x86_64-unknown-linux-musl.tar.xz" -o typst.tar.xz
+          tar -xf typst.tar.xz
+          sudo install typst-x86_64-unknown-linux-musl/typst /usr/local/bin/typst
+      - name: Run tests
+        working-directory: render-service
+        env:
+          TYPST_INTEGRATION: "1"
+        run: python3 test_app.py -v
+
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ubuntu-latest
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - linux/amd64
+          - linux/arm64
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Prepare
+        run: |
+          platform=${{ matrix.platform }}
+          {
+            echo "PLATFORM_PAIR=${platform//\//-}"
+            echo "IMAGE_NAME=${REGISTRY}/${GITHUB_REPOSITORY}-render"
+            echo "CREATED=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          } >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-buildx-action@v3
+        with:
+          platforms: ${{ matrix.platform }}
+
+      - name: Log into registry ${{ env.REGISTRY }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build image (push by digest)
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./render-service/Dockerfile
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            CREATED=${{ env.CREATED }}
+            REVISION=${{ github.sha }}
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ env.PLATFORM_PAIR }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  smoke:
+    name: Smoke test (render a PDF)
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Log into registry ${{ env.REGISTRY }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download amd64 digest
+        uses: actions/download-artifact@v4
+        with:
+          name: digest-linux-amd64
+          path: .
+
+      - name: Pull and run the amd64 image by digest
+        run: |
+          echo "IMAGE_NAME=${REGISTRY}/${GITHUB_REPOSITORY}-render" >> "$GITHUB_ENV"
+          # No tag exists yet (manifest merge runs after smoke), so pull the
+          # pushed-by-digest single-platform image directly.
+          digest=$(cat digest)
+          docker pull "${REGISTRY}/${GITHUB_REPOSITORY}-render@sha256:${digest}"
+          docker run --rm -d --name render-test -p 8080:8080 \
+            "${REGISTRY}/${GITHUB_REPOSITORY}-render@sha256:${digest}"
+
+      - name: Wait for health
+        run: |
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/healthz | grep -q '"status": "ok"'; then
+              echo "healthy"; exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::service did not become healthy"; exit 1
+
+      - name: Render hello-world PDF
+        run: |
+          curl -fsS -X POST http://127.0.0.1:8080/render \
+            -H 'Content-Type: application/json' \
+            -d '{"source":"= openEduSuite\nRendered by the smoke test.","format":"pdf"}' \
+            -o /tmp/out.pdf
+          head -c 4 /tmp/out.pdf | grep -q '%PDF'
+          echo "PDF OK ($(stat -c%s /tmp/out.pdf) bytes)"
+
+      - name: Cleanup
+        if: always()
+        run: docker rm -f render-test || true
+
+  merge:
+    name: Merge and publish manifest
+    runs-on: ubuntu-latest
+    needs: [build, smoke]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Prepare
+        run: echo "IMAGE_NAME=${REGISTRY}/${GITHUB_REPOSITORY}-render" >> "$GITHUB_ENV"
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable=${{ !github.event.release.prerelease }}
+
+      - name: Log into registry ${{ env.REGISTRY }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create manifest list and push
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.IMAGE_NAME }}@sha256:%s ' *)
+
+      - name: Inspect image
+        run: docker buildx imagetools inspect ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}

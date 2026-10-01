@@ -283,3 +283,27 @@ We'd like to thank everyone who is supporting Typst's development, be it via
 [`comemo`]: https://github.com/typst/comemo/
 [snap]: https://snapcraft.io/typst
 [GitHub sponsors]: https://github.com/sponsors/typst/
+
+## openEduSuite fork notes
+
+This is the [openEduSuite](https://openedu.graphwiz.ai) fork of Typst. It tracks
+upstream `typst/typst` main via a weekly
+[merge workflow](.github/workflows/sync-upstream.yml) and adds one thing:
+
+**Render service** (`render-service/`) — a small stdlib-only HTTP API around the
+`typst` CLI for typesetting documents (PDF/PNG/SVG) from templates, used as a
+first-class suite service. Ships as
+`ghcr.io/tobias-weiss-ai-xr/typst-render` (multi-arch, published on every
+release by [render-service.yml](.github/workflows/render-service.yml)); the
+pristine CLI base image is published as
+`ghcr.io/tobias-weiss-ai-xr/typst` by the upstream `docker-image.yml` workflow.
+
+```
+POST /render   {"source": "= Hello", "format": "pdf", "assets": {"data.csv": "..."}}  -> document bytes
+GET  /healthz  -> {"status": "ok", "typst": "typst 0.15.1 ..."}
+```
+
+Releases: cut a tag matching the upstream version (`v0.15.1`, reset on each
+sync) and publish a GitHub release — both image workflows fire on release
+publish. Fork-specific code lives exclusively under `render-service/` and
+`.github/workflows/` to keep upstream merges conflict-free.

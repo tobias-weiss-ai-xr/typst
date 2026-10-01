@@ -1,0 +1,38 @@
+name: Sync Upstream
+
+# Weekly merge of typst/typst main into this fork's main.
+# Conflicts fail loudly — resolve manually, do not force-push.
+
+on:
+  schedule:
+    - cron: "17 4 * * 1" # Mondays 04:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Merge upstream/main
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Merge upstream
+        run: |
+          git config user.name "openEduSuite sync bot"
+          git config user.email "noreply@graphwiz.ai"
+          git remote add upstream https://github.com/typst/typst.git
+          git fetch upstream main --tags --force
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo "Already up to date with upstream/main"
+            exit 0
+          fi
+          git merge upstream/main --no-edit
+          git push origin main
