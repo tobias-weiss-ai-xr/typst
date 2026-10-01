@@ -74,7 +74,7 @@ def validate_payload(payload):
     return normalized, None
 
 
-def compile_source(source, fmt, assets):
+def compile_source(source, format="pdf", assets=None):
     """Compile in an isolated tempdir. Returns (bytes, content_type, error)."""
     with tempfile.TemporaryDirectory(prefix="typst-render-") as tmp:
         src = os.path.join(tmp, "main.typ")
@@ -83,8 +83,8 @@ def compile_source(source, fmt, assets):
         for name, content in (assets or {}).items():
             with open(os.path.join(tmp, name), "w", encoding="utf-8") as fh:
                 fh.write(content)
-        out = os.path.join(tmp, f"out.{fmt}")
-        cmd = ["typst", "compile", "--format", fmt, "--root", tmp, src, out]
+        out = os.path.join(tmp, f"out.{format}")
+        cmd = ["typst", "compile", "--format", format, "--root", tmp, src, out]
         try:
             proc = subprocess.run(
                 cmd, capture_output=True, text=True, timeout=TIMEOUT, cwd=tmp
@@ -95,7 +95,7 @@ def compile_source(source, fmt, assets):
             diag = (proc.stderr or proc.stdout or "unknown error").strip()
             return None, None, diag[-4000:]
         with open(out, "rb") as fh:
-            return fh.read(), FORMATS[fmt], None
+            return fh.read(), FORMATS[format], None
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -140,7 +140,11 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         def work():
-            return compile_source(**normalized)
+            return compile_source(
+                source=normalized["source"],
+                format=normalized["format"],
+                assets=normalized["assets"],
+            )
 
         data, ctype, err = _pool.submit(work).result()
         if err:

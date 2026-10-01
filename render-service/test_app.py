@@ -66,6 +66,35 @@ class IntegrationTest(unittest.TestCase):
         _, _, err = compile_source("#does-not-exist", "pdf", {})
         self.assertIsNotNone(err)
 
+    def test_http_end_to_end(self):
+        """Regression: exercise the real HTTP handler path (it must accept
+        the exact payload shape validate_payload produces)."""
+        import json as _json
+        import threading
+        import urllib.request
+        from http.server import ThreadingHTTPServer
+
+        import app as app_mod
+
+        app_mod._VERSION = "test"
+        server = ThreadingHTTPServer(("127.0.0.1", 0), app_mod.Handler)
+        t = threading.Thread(target=server.serve_forever, daemon=True)
+        t.start()
+        try:
+            url = f"http://127.0.0.1:{server.server_address[1]}/render"
+            body = _json.dumps(
+                {"source": "= Hi", "format": "pdf", "assets": {}},
+            ).encode()
+            req = urllib.request.Request(
+                url, data=body, headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                self.assertEqual(resp.status, 200)
+                self.assertEqual(resp.headers["Content-Type"], "application/pdf")
+                self.assertTrue(resp.read().startswith(b"%PDF"))
+        finally:
+            server.shutdown()
+
 
 if __name__ == "__main__":
     unittest.main()
