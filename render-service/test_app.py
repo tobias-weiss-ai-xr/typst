@@ -98,3 +98,51 @@ class IntegrationTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+class LandingPageTest(unittest.TestCase):
+    """GET / must serve the browser landing page instead of a 404 JSON dump
+    (the URL is oauth2-proxy-gated → user-facing)."""
+
+    def _server(self):
+        import app as app_mod
+        import threading
+        from http.server import ThreadingHTTPServer
+        app_mod._VERSION = "test"
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), app_mod.Handler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        self.addCleanup(srv.shutdown)
+        return f"http://127.0.0.1:{srv.server_address[1]}"
+
+    def test_get_root_serves_html(self):
+        import urllib.request
+        base = self._server()
+        with urllib.request.urlopen(base + "/") as r:
+            body = r.read().decode("utf-8", "replace")
+            self.assertIn("text/html", r.headers["Content-Type"])
+            self.assertIn("<title>Typst Render", body)
+            self.assertNotIn('"error"', body)
+
+    def test_healthz_still_json(self):
+        import urllib.request
+        base = self._server()
+        with urllib.request.urlopen(base + "/healthz") as r:
+            self.assertIn("application/json", r.headers["Content-Type"])
+            self.assertIn('"status": "ok"', r.read().decode())
+
+    def test_unknown_get_still_json_404(self):
+        import urllib.error
+        import urllib.request
+        base = self._server()
+        try:
+            urllib.request.urlopen(base + "/nope")
+            self.fail("expected 404")
+        except urllib.error.HTTPError as e:
+            self.assertEqual(e.code, 404)
+            self.assertIn(b'"error"', e.read())
+
+    def test_landing_contains_form(self):
+        from app import _LANDING
+        for token in ("/render", "<textarea", "svg", "pdf"):
+            self.assertIn(token, _LANDING)

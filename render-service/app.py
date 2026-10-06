@@ -110,8 +110,18 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _html(self, code, text):
+        body = text.encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
-        if self.path == "/healthz":
+        if self.path in ("/", "/index.html"):
+            self._html(200, _LANDING)
+        elif self.path == "/healthz":
             self._json(200, {"status": "ok", "typst": _VERSION})
         else:
             self._json(404, {"error": "not found"})
@@ -158,6 +168,74 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *args):  # keep container logs one-line
         print(f"{self.address_string()} {fmt % args}", flush=True)
+
+
+_LANDING = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Typst Render — openEduSuite</title>
+<style>
+  :root{--bg:#0f172a;--card:#1e293b;--ink:#e2e8f0;--mut:#94a3b8;--acc:#38bdf8;--ok:#34d399;--err:#f87171}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 ui-sans-serif,system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;padding:32px 16px}
+  h1{font-size:22px;margin:0 0 4px} p.tag{color:var(--mut);margin:0 0 24px;max-width:640px;text-align:center}
+  .card{width:min(920px,100%);background:var(--card);border:1px solid #334155;border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px}
+  textarea{width:100%;background:#0b1220;color:var(--ink);border:1px solid #334155;border-radius:8px;padding:10px;font:13px/1.5 ui-monospace,monospace;resize:vertical;min-height:180px}
+  .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  select,button{padding:8px 12px;border-radius:8px;border:1px solid #334155;background:#0b1220;color:var(--ink);font-size:14px}
+  button{background:var(--acc);color:#082f49;border:none;font-weight:600;cursor:pointer}
+  button:disabled{opacity:.6;cursor:wait}
+  .err{color:var(--err);white-space:pre-wrap;font:12px/1.4 ui-monospace,monospace}
+  img{max-width:100%;border:1px solid #334155;border-radius:8px} a.dl{color:var(--acc)}
+  #basic{font:13px/1.6 ui-monospace,monospace;color:var(--mut);background:#0b1220;border:1px solid #334155;border-radius:8px;padding:10px;margin:0}
+</style>
+</head>
+<body>
+<h1>Typst Render</h1>
+<p class="tag">Compile Typst documents to PDF / PNG / SVG. Source in the box, pick a format, hit Render.</p>
+
+<div class="card">
+  <textarea id="src" spellcheck="false">= Welcome to Typst Render
+
+We compile *live* in the browser via the render API.
+
+- #strong[Fast]: subprocess kept cold and bounded
+- #emph[Safe]: flat asset names, hard timeouts
+
+== Try it
+Pick a format and press Render. Use: *bold*, `code`.
+</textarea>
+  <pre id="basic">endpoint: POST /render   body: {\"source\": \"...\", \"format\": \"pdf|png|svg\"}</pre>
+  <div class="row">
+    <select id="fmt"><option value="svg">SVG</option><option value="png">PNG</option><option value="pdf">PDF</option></select>
+    <button id="go">Render</button>
+    <a class="dl" id="dl" hidden>Download output</a>
+  </div>
+  <pre class="err" id="err" hidden></pre>
+  <div id="out"></div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+$('go').onclick=async()=>{
+  const b=$('go'),fmt=$('fmt').value;
+  b.disabled=true;$('err').hidden=true;$('out').innerHTML='';$('dl').hidden=true;
+  try{
+    const r=await fetch('/render',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({source:$('src').value,format:fmt})});
+    const ct=r.headers.get('Content-Type')||'';
+    if(r.status!==200){const e=await r.json();throw new Error(e.error||('HTTP '+r.status));}
+    $('dl').hidden=false;$('dl').href=URL.createObjectURL(await r.blob());$('dl').download='out.'+fmt;
+    if(ct.includes('svg')){$('out').innerHTML=await r.text();$('out').querySelectorAll('svg').forEach(s=>s.style.maxWidth='100%');}
+    else if(ct.includes('pdf')){}else{const u=URL.createObjectURL(await r.blob());$('out').innerHTML='<img src="'+u+'">';}
+  }catch(e){$('err').hidden=false;$('err').textContent='Error: '+e.message;}
+  finally{b.disabled=false;}
+};
+</script>
+</body>
+</html>
+"""
 
 
 _VERSION = typst_version()
