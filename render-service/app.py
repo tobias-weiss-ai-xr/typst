@@ -170,68 +170,169 @@ class Handler(BaseHTTPRequestHandler):
         print(f"{self.address_string()} {fmt % args}", flush=True)
 
 
+# ---------------------------------------------------------------- landing UI
+# FOSS & dependency-free (vanilla JS, no CDN, offline-capable). The client
+# reads the /render Response body EXACTLY ONCE (arrayBuffer) and derives both
+# the inline preview and the download link from that single read — reading a
+# Response stream twice throws "body stream already read" (plural blob()/text()
+# calls is the classic regression; guard test in test_app.py).
 _LANDING = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Typst Render — openEduSuite</title>
+<title>Typst — openEduSuite Web Editor</title>
 <style>
-  :root{--bg:#0f172a;--card:#1e293b;--ink:#e2e8f0;--mut:#94a3b8;--acc:#38bdf8;--ok:#34d399;--err:#f87171}
-  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 ui-sans-serif,system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;padding:32px 16px}
-  h1{font-size:22px;margin:0 0 4px} p.tag{color:var(--mut);margin:0 0 24px;max-width:640px;text-align:center}
-  .card{width:min(920px,100%);background:var(--card);border:1px solid #334155;border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px}
-  textarea{width:100%;background:#0b1220;color:var(--ink);border:1px solid #334155;border-radius:8px;padding:10px;font:13px/1.5 ui-monospace,monospace;resize:vertical;min-height:180px}
-  .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-  select,button{padding:8px 12px;border-radius:8px;border:1px solid #334155;background:#0b1220;color:var(--ink);font-size:14px}
+  :root{--bg:#0f172a;--card:#1e293b;--ink:#e2e8f0;--mut:#94a3b8;--acc:#38bdf8;--ok:#34d399;--err:#f87171;--edge:#334155}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 ui-sans-serif,system-ui,sans-serif}
+  header{display:flex;align-items:center;gap:14px;padding:14px 20px;border-bottom:1px solid var(--edge);flex-wrap:wrap}
+  h1{font-size:18px;margin:0} h1 .t{color:var(--acc)}
+  .tag{color:var(--mut);font-size:13px}
+  .sp{flex:1}
+  select,button,input{background:#0b1220;color:var(--ink);border:1px solid var(--edge);border-radius:8px;padding:7px 10px;font-size:13px}
   button{background:var(--acc);color:#082f49;border:none;font-weight:600;cursor:pointer}
   button:disabled{opacity:.6;cursor:wait}
-  .err{color:var(--err);white-space:pre-wrap;font:12px/1.4 ui-monospace,monospace}
-  img{max-width:100%;border:1px solid #334155;border-radius:8px} a.dl{color:var(--acc)}
-  #basic{font:13px/1.6 ui-monospace,monospace;color:var(--mut);background:#0b1220;border:1px solid #334155;border-radius:8px;padding:10px;margin:0}
+  #status{font-size:12px;color:var(--mut);white-space:nowrap}
+  main{display:grid;grid-template-columns:1fr 1fr;gap:0;height:calc(100vh - 57px)}
+  @media (max-width:900px){main{grid-template-columns:1fr;grid-auto-rows:50vh}}
+  .pane{display:flex;flex-direction:column;min-height:0}
+  .pane+.pane{border-left:1px solid var(--edge)}
+  @media (max-width:900px){.pane+.pane{border-left:none;border-top:1px solid var(--edge)}}
+  .pane h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut);margin:0;padding:8px 14px;border-bottom:1px solid var(--edge);font-weight:600}
+  textarea{flex:1;width:100%;background:#0b1220;color:var(--ink);border:none;outline:none;resize:none;padding:14px;font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;tab-size:2;min-height:200px}
+  #out{margin:0;flex:1;overflow:auto;background:#fff;color:#111}
+  #out img{max-width:100%} #out svg{max-width:100%;height:auto;display:block}
+  #out.sand{display:flex;align-items:center;justify-content:center;color:#666;font:13px/1.5 system-ui,sans-serif;padding:20px;text-align:center}
+  #err{display:none;background:#3b0d16;color:var(--err);border-top:1px solid #7f1d1d;font:12px/1.45 ui-monospace,monospace;padding:10px 14px;white-space:pre-wrap;max-height:140px;overflow:auto;margin:0}
+  #obj{display:none;flex:1;border:none;width:100%}
+  .dl{display:none;color:var(--acc);text-decoration:none;font-size:13px;font-weight:600}
+  .dl:hover{text-decoration:underline}
+  noscript{display:block;padding:20px}
 </style>
 </head>
 <body>
-<h1>Typst Render</h1>
-<p class="tag">Compile Typst documents to PDF / PNG / SVG. Source in the box, pick a format, hit Render.</p>
-
-<div class="card">
-  <textarea id="src" spellcheck="false">= Welcome to Typst Render
-
-We compile *live* in the browser via the render API.
-
-- #strong[Fast]: subprocess kept cold and bounded
-- #emph[Safe]: flat asset names, hard timeouts
-
-== Try it
-Pick a format and press Render. Use: *bold*, `code`.
-</textarea>
-  <pre id="basic">endpoint: POST /render   body: {\"source\": \"...\", \"format\": \"pdf|png|svg\"}</pre>
-  <div class="row">
-    <select id="fmt"><option value="svg">SVG</option><option value="png">PNG</option><option value="pdf">PDF</option></select>
-    <button id="go">Render</button>
-    <a class="dl" id="dl" hidden>Download output</a>
-  </div>
-  <pre class="err" id="err" hidden></pre>
-  <div id="out"></div>
-</div>
-
+<header>
+  <h1>Typst <span class="t">Web Editor</span></h1>
+  <span class="tag">openEduSuite · FOSS · compiles server-side</span>
+  <span class="sp"></span>
+  <span id="status">bereit</span>
+  <select id="sample" title="Beispieldokument laden"><option value="">Sample…</option></select>
+  <select id="fmt"><option value="svg">SVG</option><option value="png">PNG</option><option value="pdf">PDF</option></select>
+  <a class="dl" id="dl" download>⬇ Download</a>
+  <button id="go">Render</button>
+</header>
+<main>
+  <section class="pane">
+    <h2>Editor — Typst Markup</h2>
+    <textarea id="src" spellcheck="false"></textarea>
+  </section>
+  <section class="pane">
+    <h2>Vorschau</h2>
+    <div id="out" class="sand">Noch nichts gerendert — tippe oder drücke Ctrl+Enter.</div>
+    <iframe id="obj" title="Vorschau"></iframe>
+    <pre id="err"></pre>
+  </section>
+</main>
 <script>
 const $=id=>document.getElementById(id);
-$('go').onclick=async()=>{
-  const b=$('go'),fmt=$('fmt').value;
-  b.disabled=true;$('err').hidden=true;$('out').innerHTML='';$('dl').hidden=true;
-  try{
-    const r=await fetch('/render',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({source:$('src').value,format:fmt})});
-    const ct=r.headers.get('Content-Type')||'';
-    if(r.status!==200){const e=await r.json();throw new Error(e.error||('HTTP '+r.status));}
-    $('dl').hidden=false;$('dl').href=URL.createObjectURL(await r.blob());$('dl').download='out.'+fmt;
-    if(ct.includes('svg')){$('out').innerHTML=await r.text();$('out').querySelectorAll('svg').forEach(s=>s.style.maxWidth='100%');}
-    else if(ct.includes('pdf')){}else{const u=URL.createObjectURL(await r.blob());$('out').innerHTML='<img src="'+u+'">';}
-  }catch(e){$('err').hidden=false;$('err').textContent='Error: '+e.message;}
-  finally{b.disabled=false;}
+const SAMPLES={
+"Erste Schritte":`= Willkommen in Typst
+Ein minimales Dokument mit *Fett*, _kursiv_, \`Code\` und einer Liste:
+- #emph[semantisch] statt bloß italik
+- #strong[strukturiert] statt HTML-Knäuel
+
+== Formel
+$ integral_0^infty e^(-x^2) dif x = sqrt(pi) / 2 $
+`,
+"Seminararbeit":`#set page(paper: \"a4\", margin: 2.6cm)
+#set text(font: \"New Computer Modern\", size: 11pt)
+#set par(justify: true)
+
+#align(center)[
+  #text(size: 20pt, weight: \"bold\")[Digitale Hochschullehre mit openEduSuite]
+  Einleitung einer Seminararbeit
+
+]
+
+== Motivation
+Die openEduSuite bündelt #strong[E-Mail], *Cloud*, Projektarbeit und
+Wissenschaftskommunikation in einer Open-Source-Platform.
+
+== Methodik
+Wir vergleichen den Workflow vorher/nachher anhand von:
++ Diensteanbindung (Keycloak-SSO)
++ Automatisierung (Operaton-Fachregeln)
++ Nachhaltigkeit (K8up-Restores)
+`,
+"Poster / Handout":`#set page(paper: \"a4\", flipped: true)
+#set text(size: 11pt, font: \"Helvetica\")
+#block(width: 100%)[
+  #rect(fill: rgb(\"#0f766e\"), width: 100%, height: 2.2cm)[
+    #set text(fill: white, size: 17pt, weight: \"bold\")
+    #v(0.4cm)
+    #align(center)[openEduSuite — Tag der offenen Tür 2026]
+  ]
+  #v(0.3cm)
+]
+#grid(columns: 2, gutter: 0.8cm)[
+  #block(stroke: 0.6pt + gray, inset: 8pt)[
+    == Was ist das?
+    Eine #emph[vernetzte] Open-Source-Campus-IT:
+    Mail, Cloud, Projektarbeit, Tickets, Workflows.
+  ]
+  #block(stroke: 0.6pt + gray, inset: 8pt)[
+    == Wie mitmachen?
+    1. Auf das Portal gehen
+    2. SSO-Login nutzen
+    3. Loslegen — alles FOSS
+  ]
+]
+`
 };
+// Sample-Setup
+const sel=$('sample');
+Object.keys(SAMPLES).forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent=k;sel.appendChild(o);});
+let timer=null, curURL=null;
+function setStatus(t){$('status').textContent=t;}
+function render(fmt){
+  clearTimeout(timer);
+  const body=JSON.stringify({source:$('src').value,format:fmt});
+  setStatus('kompiliere…');$('go').disabled=true;$('err').style.display='none';
+  fetch('/render',{method:'POST',headers:{'Content-Type':'application/json'},body})
+    .then(async r=>{
+      const ct=r.headers.get('Content-Type')||'';
+      if(r.status!==200){let e={};try{e=await r.json()}catch(_){}
+        throw new Error(e.error||('HTTP '+r.status));}
+      // Einmaliger Body-Read: beide Vorschau- und Download-URLs aus demselben Puffer ableiten
+      const buf=await r.arrayBuffer();
+      if(curURL)URL.revokeObjectURL(curURL);
+      curURL=URL.createObjectURL(new Blob([buf],{type:ct}));
+      const dl=$('dl');dl.href=curURL;dl.download='typst-doc.'+fmt;dl.style.display='inline-block';
+      const out=$('out'),obj=$('obj');
+      out.style.display='none';obj.style.display='none';out.classList.remove('sand');
+      if(ct.includes('svg')){
+        out.innerHTML=new TextDecoder().decode(buf);
+        out.querySelectorAll('svg').forEach(s=>{s.style.maxWidth='100%';s.style.height='auto';});
+        out.style.display='block';
+      }else if(ct.includes('pdf')){
+        obj.src=curURL;obj.style.display='block';
+      }else{
+        out.innerHTML='<img src="'+curURL+'">';out.style.display='block';
+      }
+      setStatus('✓ '+fmt.toUpperCase()+' · '+(buf.byteLength/1024).toFixed(1)+' KB');
+    })
+    .catch(e=>{setStatus('Fehler');const er=$('err');er.style.display='block';er.textContent=e.message;})
+    .finally(()=>{$('go').disabled=false;});
+}
+$('go').onclick=()=>render($('fmt').value);
+$('src').addEventListener('input',()=>{setStatus('live…');clearTimeout(timer);timer=setTimeout(()=>render($('fmt').value),400);});
+$('fmt').onchange=()=>render($('fmt').value);
+$('sample').onchange=()=>{if($('sample').value){$('src').value=SAMPLES[$('sample').value];$('sample').value='';render($('fmt').value);}};
+$('src').addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();render($('fmt').value);}});
+// Initialdokument
+$('src').value=SAMPLES['Erste Schritte'];
+render('svg');
 </script>
 </body>
 </html>

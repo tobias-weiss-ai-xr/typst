@@ -96,6 +96,31 @@ class IntegrationTest(unittest.TestCase):
             server.shutdown()
 
 
+class LandingClientTest(unittest.TestCase):
+    """Client-side guards for the landed UI."""
+
+    def test_response_body_read_exactly_once(self):
+        """Regression: reading a Response stream twice (blob()/text()/
+        json()) throws 'body stream already read'. The editor must read the
+        body exactly once (arrayBuffer) and derive preview + download from it."""
+        import app as app_mod
+
+        script = app_mod._LANDING
+        self.assertIn("await r.arrayBuffer()", script)
+        self.assertNotIn("await r.blob()", script)
+        self.assertNotIn("await r.text()", script)
+        # Erfolgspfad liest genau einmal (arrayBuffer); r.json() nur im
+        # Error-Zweig auf der FEHLER-Response (anderer Body, ok).
+        self.assertEqual(script.count("arrayBuffer"), 1)
+
+    def test_landing_has_editor_ctrls(self):
+        import app as app_mod
+
+        script = app_mod._LANDING
+        for needle in ('id="src"', 'id="fmt"', 'id="go"', 'id="dl"', 'id="out"', 'id="err"'):
+            self.assertIn(needle, script)
+
+
 if __name__ == "__main__":
     unittest.main()
 
