@@ -146,7 +146,7 @@ class LandingPageTest(unittest.TestCase):
         with urllib.request.urlopen(base + "/") as r:
             body = r.read().decode("utf-8", "replace")
             self.assertIn("text/html", r.headers["Content-Type"])
-            self.assertIn("<title>Typst Render", body)
+            self.assertIn("<title>Typst — openEduSuite Web Editor", body)
             self.assertNotIn('"error"', body)
 
     def test_healthz_still_json(self):

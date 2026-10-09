@@ -238,12 +238,26 @@ _LANDING = """<!doctype html>
 const $=id=>document.getElementById(id);
 const SAMPLES={
 "Erste Schritte":`= Willkommen in Typst
-Ein minimales Dokument mit *Fett*, _kursiv_, \`Code\` und einer Liste:
+
+Ein minimales Dokument mit *Fett*, _Kursiv_, \`Code\` und Listen:
+
 - #emph[semantisch] statt bloß italik
 - #strong[strukturiert] statt HTML-Knäuel
 
 == Formel
-$ integral_0^infty e^(-x^2) dif x = sqrt(pi) / 2 $
+
+Das Gauß-Integral:
+
+$ integral_0^infinity e^(-x^2) dif x = sqrt(pi) / 2 $
+
+== Tabelle
+
+#table(
+  columns: 3,
+  [*Dienst*], [*Zweck*], [*SSO*],
+  [Mail], [Stalwart], [ja],
+  [Dokumente], [TOSS], [ja],
+)
 `,
 "Seminararbeit":`#set page(paper: \"a4\", margin: 2.6cm)
 #set text(font: \"New Computer Modern\", size: 11pt)
@@ -251,43 +265,57 @@ $ integral_0^infty e^(-x^2) dif x = sqrt(pi) / 2 $
 
 #align(center)[
   #text(size: 20pt, weight: \"bold\")[Digitale Hochschullehre mit openEduSuite]
-  Einleitung einer Seminararbeit
 
+  Einleitung einer Seminararbeit
 ]
 
 == Motivation
-Die openEduSuite bündelt #strong[E-Mail], *Cloud*, Projektarbeit und
-Wissenschaftskommunikation in einer Open-Source-Platform.
+Die openEduSuite bündelt #strong[Mail], #strong[Cloud], Projektarbeit und
+Wissenschaftskommunikation in einer Open-Source-Plattform.
 
 == Methodik
 Wir vergleichen den Workflow vorher/nachher anhand von:
+
 + Diensteanbindung (Keycloak-SSO)
-+ Automatisierung (Operaton-Fachregeln)
-+ Nachhaltigkeit (K8up-Restores)
++ Automatisierung (BPMN-Fachregeln)
++ Nachhaltigkeit (Backup-Restores)
+
+== Ergebnis
+Die Einführung reduziert Einstiegshürden messbar. Als Render-Benchmark dient
+das Gauß-Integral:
+
+$ integral_0^infinity e^(-x^2) dif x = sqrt(pi) / 2 $
 `,
-"Poster / Handout":`#set page(paper: \"a4\", flipped: true)
-#set text(size: 11pt, font: \"Helvetica\")
-#block(width: 100%)[
-  #rect(fill: rgb(\"#0f766e\"), width: 100%, height: 2.2cm)[
-    #set text(fill: white, size: 17pt, weight: \"bold\")
-    #v(0.4cm)
-    #align(center)[openEduSuite — Tag der offenen Tür 2026]
+"Poster / Handout":`#set page(paper: \"a4\", flipped: true, margin: 1.2cm)
+#set text(size: 11pt)
+
+#rect(fill: rgb(\"#0f766e\"), width: 100%, inset: 12pt)[
+  #text(fill: white, size: 17pt, weight: \"bold\")[
+    openEduSuite — Tag der offenen Tür 2026
   ]
-  #v(0.3cm)
 ]
-#grid(columns: 2, gutter: 0.8cm)[
-  #block(stroke: 0.6pt + gray, inset: 8pt)[
+
+#v(0.4cm)
+
+#grid(
+  columns: 2, gutter: 0.8cm,
+  block(stroke: 0.6pt + gray, inset: 8pt)[
     == Was ist das?
     Eine #emph[vernetzte] Open-Source-Campus-IT:
     Mail, Cloud, Projektarbeit, Tickets, Workflows.
-  ]
-  #block(stroke: 0.6pt + gray, inset: 8pt)[
+  ],
+  block(stroke: 0.6pt + gray, inset: 8pt)[
     == Wie mitmachen?
-    1. Auf das Portal gehen
-    2. SSO-Login nutzen
-    3. Loslegen — alles FOSS
-  ]
-]
+    + Portal öffnen
+    + SSO-Login nutzen
+    + Loslegen — alles FOSS
+  ],
+)
+
+#v(0.3cm)
+#align(center)[#text(size: 9pt, fill: gray)[
+  Formel des Tages: $ integral_0^infinity e^(-x^2) dif x = sqrt(pi) / 2 $
+]]
 `
 };
 // Sample-Setup
