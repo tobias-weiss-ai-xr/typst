@@ -12,7 +12,7 @@ Die maßgebliche Produktarchitektur ist im **openEduSuite**-Repo als
 Dieses Repo (**typst**) ist der **openEduSuite-Fork von Typst** inkl. Render-Service
 (`render-service/`). Architektur-Details dieses Forks siehe `docs/`; die Produkt-arc42
 liegt zentral im openEduSuite-Repo. Der Render-Dienst ist als Komponente in der
-Container-Sicht (Tenant `opendesk-edu`) vertreten.
+Container-Sicht (Tenant `openedusuite`) vertreten.
 
 ---
 
