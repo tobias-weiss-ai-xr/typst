@@ -27,7 +27,7 @@ jobs:
       - name: Merge upstream
         run: |
           git config user.name "openEduSuite sync bot"
-          git config user.email "noreply@graphwiz.ai"
+          git config user.email "noreply@openedusuite.org"
           git remote add upstream https://github.com/typst/typst.git
           git fetch upstream main --tags --force
           if git merge-base --is-ancestor upstream/main HEAD; then

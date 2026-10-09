@@ -286,7 +286,7 @@ We'd like to thank everyone who is supporting Typst's development, be it via
 
 ## openEduSuite fork notes
 
-This is the [openEduSuite](https://openedu.graphwiz.ai) fork of Typst. It tracks
+This is the [openEduSuite](https://openedusuite.org) fork of Typst. It tracks
 upstream `typst/typst` main via a weekly
 [merge workflow](.github/workflows/sync-upstream.yml) and adds one thing:
 
